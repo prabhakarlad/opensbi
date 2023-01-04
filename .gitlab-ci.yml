@@ -1,0 +1,46 @@
+image: gitlab.renesas.solutions:5050/spl2/continuous-integration/dockerfiles:linux__ubuntu-20.04-latest
+
+stages:
+  - dtchecks
+
+.build-opensbi:
+  stage: dtchecks
+  variables:
+    GIT_STRATEGY: none
+    IMAGES_DIR: tmp-glibc/deploy/images/${MACHINE}
+    OUTPUT_DIR: ${CI_PROJECT_DIR}/output
+    BUILD_DIR: ${CI_PROJECT_DIR}/build
+    CI_DT_SCHEMA: f655743
+    baselinelog: baselinelog.log
+  before_script:
+    - printenv
+    - rm -rf ${OUTPUT_DIR} ${BUILD_DIR}
+    - mkdir -p ${OUTPUT_DIR} ${BUILD_DIR}
+    - sudo apt-get -y update
+    - sudo apt install -y python3-ruamel.yaml libssl-dev sparse libncurses-dev gawk flex bison openssl libssl-dev dkms libelf-dev libudev-dev libpci-dev libiberty-dev autoconf llvm bc sqlite3 libsqlite3-dev libdbd-sqlite3-perl libgmp-dev libmpc-dev
+    - wget https://gitlab.renesas.solutions/prabhakarlad/riscv-toolchain/-/raw/master/riscv-toolchain-12.2.0.zip?inline=false
+    - unzip riscv-toolchain-12.2.0.zip?inline=false -d ~/
+    - export CROSS_COMPILE=~/install/bin/riscv64-unknown-linux-gnu-
+  script:
+    - cd ${BUILD_DIR}
+    - git clone git@gitlab.renesas.solutions:spl2/civil-infrastructure-platform/rzg2l-u-boot.git u-boot
+    - cd u-boot && git checkout -b lclrz-five-v2023.01 origin/rz-five-v2023.01 && cd -
+    - git clone git@gitlab.renesas.solutions:spl2/civil-infrastructure-platform/opensbi.git opensbi
+    - cd opensbi && git remote update && git checkout -b lcl${CI_COMMIT_BRANCH} origin/${CI_COMMIT_BRANCH}
+    - rm -rf build/; make clean; make ARCH=riscv PLATFORM=generic W=1 -j$(nproc)
+    - rm -f ${BUILD_DIR}/u-boot/*.bin
+    - cp ./build/platform/generic/firmware/fw_dynamic.bin ${BUILD_DIR}/u-boot/ && sync
+    - cd ${BUILD_DIR}/u-boot/ && make clean distclean
+    - make smarc-rzf_defconfig && make -j$(nproc)
+    - ${CROSS_COMPILE}objcopy -I binary -O srec --adjust-vma=0 --srec-forceS3 u-boot.itb FIT.srec
+    - ./mkbl2.sh ./spl/u-boot-spl.bin
+    - ${CROSS_COMPILE}objcopy -I binary -O srec --adjust-vma=0x11e00 --srec-forceS3 bl2.img SPL.srec
+    - cp SPL.srec FIT.srec  ${OUTPUT_DIR} && sync
+  artifacts:
+    name: "${CI_JOB_NAME}-${CI_JOB_ID}"
+    expire_in: 1 week
+    paths:
+      - ${OUTPUT_DIR}
+
+rzfive_opensbi:
+  extends: .build-opensbi
