@@ -6,11 +6,16 @@
 #include <andes/andes45.h>
 #include <andes/andes_sbi.h>
 #include <sbi/riscv_asm.h>
+#include <sbi/riscv_io.h>
 #include <sbi/sbi_error.h>
 
 enum sbi_ext_andes_fid {
 	SBI_EXT_ANDES_FID0 = 0, /* Reserved for future use */
 	SBI_EXT_ANDES_IOCP_SW_WORKAROUND,
+	SBI_EXT_RENESAS_RZFIVE_GET_MCACHE_CTL_STATUS,
+	SBI_EXT_RENESAS_RZFIVE_GET_MMISC_CTL_STATUS,
+	SBI_EXT_RENESAS_RZFIVE_READ_LM,
+	SBI_EXT_RENESAS_RZFIVE_WRITE_LM,
 };
 
 static bool andes45_cache_controllable(void)
@@ -42,6 +47,38 @@ int andes_sbi_vendor_ext_provider(long funcid,
 	case SBI_EXT_ANDES_IOCP_SW_WORKAROUND:
 		*out_value = andes45_apply_iocp_sw_workaround();
 		break;
+
+	case SBI_EXT_RENESAS_RZFIVE_GET_MCACHE_CTL_STATUS:
+		*out_value = csr_read(0x7ca);
+		break;
+
+	case SBI_EXT_RENESAS_RZFIVE_GET_MMISC_CTL_STATUS:
+		*out_value = csr_read(0x7d0);
+		break;
+
+	case SBI_EXT_RENESAS_RZFIVE_READ_LM: {
+		volatile char *base = (volatile char *)regs->a0;
+
+		if (regs->a0 < 0x30000 || regs->a0 >= 0x50000) {
+			*out_value = 0x0;
+			return SBI_EINVAL;
+		}
+		*out_value = readq(base);
+		break;
+	}
+
+	case SBI_EXT_RENESAS_RZFIVE_WRITE_LM: {
+		volatile char *base = (volatile char *)regs->a0;
+		u64 val = (u64)regs->a1;
+
+		if (regs->a0 < 0x30000 || regs->a0 >= 0x50000) {
+			*out_value = 0x0;
+			return SBI_EINVAL;
+		}
+		writeq(val, base);
+		*out_value = readq(base);
+		break;
+	}
 
 	default:
 		return SBI_EINVAL;
