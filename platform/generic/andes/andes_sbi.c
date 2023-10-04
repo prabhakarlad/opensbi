@@ -16,6 +16,7 @@ enum sbi_ext_andes_fid {
 	SBI_EXT_RENESAS_RZFIVE_GET_MMISC_CTL_STATUS,
 	SBI_EXT_RENESAS_RZFIVE_READ_LM,
 	SBI_EXT_RENESAS_RZFIVE_WRITE_LM,
+	SBI_EXT_RENESAS_RZFIVE_ETH_WORKAROUND,
 };
 
 static bool andes45_cache_controllable(void)
@@ -77,6 +78,28 @@ int andes_sbi_vendor_ext_provider(long funcid,
 		}
 		writeq(val, base);
 		*out_value = readq(base);
+		break;
+	}
+
+	case SBI_EXT_RENESAS_RZFIVE_ETH_WORKAROUND: {
+		uintptr_t mcache_ctl_val = csr_read(0x7ca);
+		u8 status = (u8)regs->a0;
+
+		if (status)
+			mcache_ctl_val |= BIT(1);
+		else
+			mcache_ctl_val &= ~BIT(1);
+		csr_write(0x7cc, 6);
+		csr_write(0x7ca, mcache_ctl_val);
+		if (status) {
+			uint32_t *l2c_ctl_base = (void *)0x13400008;
+			uint32_t l2c_ctl_val = *l2c_ctl_base;
+			l2c_ctl_val |= 0x1;
+			*l2c_ctl_base = l2c_ctl_val;
+			l2c_ctl_val = *l2c_ctl_base;
+			while ((l2c_ctl_val & BIT(14)))
+				l2c_ctl_val = *l2c_ctl_base;
+		}
 		break;
 	}
 
